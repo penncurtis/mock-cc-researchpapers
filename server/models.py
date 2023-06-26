@@ -1,8 +1,8 @@
 from flask_sqlalchemy import SQLAlchemy
 from sqlalchemy import MetaData
+from sqlalchemy_serializer import SerializerMixin
 from sqlalchemy.orm import validates
 from sqlalchemy.ext.associationproxy import association_proxy
-from sqlalchemy_serializer import SerializerMixin
 
 metadata = MetaData(naming_convention={
     "fk": "fk_%(table_name)s_%(column_0_name)s_%(referred_table_name)s",
@@ -10,54 +10,75 @@ metadata = MetaData(naming_convention={
 
 db = SQLAlchemy(metadata=metadata)
 
-# Add models here
+from app import db
 
-class Research(db.Model,SerializerMixin):
-    __tablename__ = 'researches'
-    id = db.Column(db.Integer, primary_key = True)
-    topic = db.Column(db.String)
-    year = db.Column(db.Integer)
-    page_count = db.Column(db.Integer)
+# Models
+class Team(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    team_name = db.Column(db.String, nullable=False)
+    off_rank_2022 = db.Column(db.Integer)
+    def_rank_2022 = db.Column(db.Integer)
+    points_per_game_2022 = db.Column(db.Float)
+    points_allowed_2022 = db.Column(db.Float)
 
-    # add relationships and rules and validations
-    research_authors = db.relationship("ResearchAuthors", backref='research_paper')
-    created_at = db.Column(db.DateTime, server_default=db.func.now())
-    updated_at = db.Column(db.DateTime, onupdate=db.func.now())
-    serialize_rules = ('-research_Auhtors.research_paper', '-created_at', '-updated_at')
+    games = db.relationship('Game', backref='team')
+    predictions = db.relationship('Prediction', backref='team')
 
-    @validates('year')
-    def validate_year(self, key, value):
-        if not len(str(value)) == 4:
-            raise ValueError('enter valid year pls')
-        return value
-
-class Author(db.Model,SerializerMixin):
-    __tablename__ = 'authors'
-    id = db.Column(db.Integer, primary_key = True)
-    name = db.Column(db.String)
-    field_of_study = db.Column(db.String)
-
-    # add relationships and rules and validations
-    research_authors = db.relationship("ResearchAuthors", backref='authors')
-    created_at = db.Column(db.DateTime, server_default=db.func.now())
-    updated_at = db.Column(db.DateTime, onupdate=db.func.now())
-    serialize_rules = ('-research_Authors.authors', '-created_at', '-updated_at')
-
-    @validates('field_of_study')
-    def validate_field_of_study(self, key, value):
-        valid_fos = ['AI', 'Robotics', 'Machine Learning', 'Vision', 'Cybersecurity']
-        if value not in valid_fos:
-            raise ValueError('enter valid field of study pls')
-        return value
-
-
-class ResearchAuthors(db.Model,SerializerMixin):
-    __tablename__ = "research_Authors"
-    id = db.Column(db.Integer, primary_key = True)
-
-    # add relationships and rules and validations
-    research_id = db.Column(db.Integer, db.ForeignKey('researches.id'))
-    author_id = db.Column(db.Integer, db.ForeignKey('authors.id'))
-    serialize_rules = ('-authors.research_Authors', '-research_paper.research_Authors', '-created_at', '-updated_at')
-
+    def serialize(self):
+        return {
+            'id': self.id,
+            'team_name': self.team_name,
+            'off_rank_2022': self.off_rank_2022,
+            'def_rank_2022': self.def_rank_2022,
+            'points_per_game_2022': self.points_per_game_2022,
+            'points_allowed_2022': self.points_allowed_2022
+        }
     
+    @validates('team_name')
+    def validate_name(self, key, value):
+        if len(value) < 5:
+            raise ValueError(f"{key} must be at least 5 characters long.")
+        return value
+
+class Game(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    game_date = db.Column(db.DateTime, nullable=False)
+    location = db.Column(db.String(100), nullable=False)
+    matchup = db.Column(db.String(100), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+
+    predictions = db.relationship('Prediction', backref='game')
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'game_date': str(self.game_date),
+            'location': self.location,
+            'matchup': self.matchup
+        }
+
+class Prediction(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    machine_predicted_score = db.Column(db.Float)
+    user_predicted_score = db.Column(db.Float)
+    game_id = db.Column(db.Integer, db.ForeignKey('game.id'), nullable=False)
+    team_id = db.Column(db.Integer, db.ForeignKey('team.id'), nullable=False)
+
+    game = db.relationship('Game', backref=db.backref('predictions'))
+    team = db.relationship('Team', backref=db.backref('predictions'))
+
+    def serialize(self):
+        return {
+            'id': self.id,
+            'machine_predicted_score': self.machine_predicted_score,
+            'user_predicted_score': self.user_predicted_score,
+            'game_id': self.game_id,
+            'team_id': self.team_id
+        }
+    
+    @validates('machine_predicted_score')
+    def validate_name(self, key, value):
+        if not isinstance(value, int):
+            raise ValueError(f"{key} must be integer")
+        return value
+   
